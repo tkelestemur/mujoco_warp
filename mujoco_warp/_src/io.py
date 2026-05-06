@@ -620,14 +620,26 @@ def put_model(mjm: mujoco.MjModel) -> types.Model:
   m.qLD_all_updates = all_updates_flat if all_updates_flat else [(0, 0, 0)]
   m.qLD_level_offsets = level_offsets
 
-  # indices for sparse qM_fullm (used in solver)
+  # Indices for sparse qM_fullm (used in solver). qM_fullm_i/j are built by
+  # walking dof_parentid for each dof, so for joint types whose internal block
+  # MuJoCo stores diagonal-only in the compact (M_rownnz, M_rowadr) layout
+  # (e.g. free joints), the chain-aware layout here has more entries per row
+  # than the compact layout. qM_fullm_elemid maps (row, col) -> elemid in the
+  # chain-aware layout for O(1) reverse lookup; kernels that indexed via
+  # M_rownnz / M_rowadr would land on wrong slots once such a joint precedes
+  # other dofs in qvel order.
   m.qM_fullm_i, m.qM_fullm_j = [], []
+  qM_fullm_elemid = np.full((mjm.nv, mjm.nv), -1, dtype=np.int32)
+  elemid = 0
   for i in range(mjm.nv):
     j = i
     while j > -1:
       m.qM_fullm_i.append(i)
       m.qM_fullm_j.append(j)
+      qM_fullm_elemid[i, j] = elemid
+      elemid += 1
       j = mjm.dof_parentid[j]
+  m.qM_fullm_elemid = qM_fullm_elemid
 
   # indices for sparse qD_fullm (used in RNE derivatives)
   # D-structure is the full square sparsity pattern (both upper and lower triangle)
