@@ -104,6 +104,28 @@ class RenderUtilTest(absltest.TestCase):
     background_mask = seg_np[..., 1] == -1
     np.testing.assert_array_equal(seg_np[..., 0][background_mask], -1)
 
+  def test_get_hdr(self):
+    """Tests that get_hdr extracts linear RGB data."""
+    mjm, mjd, m, d = test_data.fixture("primitives.xml", nworld=2)
+
+    rc = mjw.create_render_context(
+      mjm,
+      nworld=2,
+      cam_res=(32, 32),
+      render_rgb=False,
+      render_hdr=True,
+    )
+
+    mjw.render(m, d, rc)
+
+    hdr_out = wp.zeros((2, 32, 32), dtype=wp.vec3)
+    mjw.get_hdr(rc, 0, hdr_out)
+
+    hdr_np = hdr_out.numpy()
+    self.assertEqual(hdr_np.shape, (2, 32, 32, 3))
+    self.assertGreater(np.count_nonzero(hdr_np), 0)
+    self.assertFalse(np.any(np.isnan(hdr_np)))
+
   def test_get_segmentation_preserves_flex_ids(self):
     """Tests that flex hits keep their real flex ids and type tags."""
     mjm, mjd, m, d = test_data.fixture("flex/multiflex.xml", nworld=1)

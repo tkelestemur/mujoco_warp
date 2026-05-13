@@ -26,6 +26,7 @@ except metadata.PackageNotFoundError:
 from mujoco_warp._src.forward import step as step
 from mujoco_warp._src.types import Model as Model
 from mujoco_warp._src.types import Data as Data
+from mujoco_warp._src.types import ToneMapType as ToneMapType
 # isort: on
 
 
@@ -64,6 +65,7 @@ from mujoco_warp._src.ray import ray as ray
 from mujoco_warp._src.ray import rays as rays
 from mujoco_warp._src.render import render as render
 from mujoco_warp._src.render_util import get_depth as get_depth
+from mujoco_warp._src.render_util import get_hdr as get_hdr
 from mujoco_warp._src.render_util import get_rgb as get_rgb
 from mujoco_warp._src.render_util import get_segmentation as get_segmentation
 from mujoco_warp._src.sensor import energy_pos as energy_pos

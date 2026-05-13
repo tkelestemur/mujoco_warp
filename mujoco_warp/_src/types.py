@@ -137,6 +137,20 @@ class ProjectionType(enum.IntEnum):
     ORTHOGRAPHIC = 1
 
 
+class ToneMapType(enum.IntEnum):
+  """Type of RGB tone mapping to apply during postprocessing.
+
+  Attributes:
+    NONE: no tone mapping
+    REINHARD: Reinhard tone mapping
+    ACES: ACES filmic approximation
+  """
+
+  NONE = 0
+  REINHARD = 1
+  ACES = 2
+
+
 class Stage(enum.IntEnum):
   """Computation stage.
 
@@ -1987,9 +2001,21 @@ class RenderContext:
     ray: rays
     rgb_data: RGB data
     rgb_adr: RGB addresses
+    hdr_data: linear HDR RGB data
+    hdr_adr: HDR addresses
     depth_data: depth data
     depth_adr: depth addresses
     render_rgb: per-camera RGB render flags
+    render_hdr: per-camera HDR render flags
+    use_rgb_postprocess: per-camera RGB postprocess flags
+    has_rgb_postprocess: whether any camera uses RGB postprocessing
+    tone_map: tone mapping mode for RGB postprocessing
+    rgb_exposure: per-world/camera RGB exposure multiplier
+    rgb_gamma: per-world/camera RGB gamma value
+    rgb_white_balance: per-world/camera RGB white balance multiplier
+    rgb_contrast: per-world/camera RGB contrast multiplier
+    rgb_saturation: per-world/camera RGB saturation multiplier
+    rgb_noise: per-pixel display-space RGB noise
     render_depth: per-camera depth render flags
     seg_data: segmentation data (per-pixel object ID/type pairs)
     seg_adr: segmentation addresses
@@ -2043,9 +2069,21 @@ class RenderContext:
   ray: array("*", wp.vec3)
   rgb_data: array("*", wp.uint32)
   rgb_adr: array("ncam", int)
+  hdr_data: array("*", wp.vec3)
+  hdr_adr: array("ncam", int)
   depth_data: array("*", wp.float32)
   depth_adr: array("ncam", int)
   render_rgb: array("ncam", bool)
+  render_hdr: array("ncam", bool)
+  use_rgb_postprocess: array("ncam", bool)
+  has_rgb_postprocess: bool
+  tone_map: int
+  rgb_exposure: array("nworld", "ncam", float)
+  rgb_gamma: array("nworld", "ncam", float)
+  rgb_white_balance: array("nworld", "ncam", wp.vec3)
+  rgb_contrast: array("nworld", "ncam", float)
+  rgb_saturation: array("nworld", "ncam", float)
+  rgb_noise: array("*", wp.vec3)
   render_depth: array("ncam", bool)
   seg_data: array("*", wp.vec2i)
   seg_adr: array("ncam", int)

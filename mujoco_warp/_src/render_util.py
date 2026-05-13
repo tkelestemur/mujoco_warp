@@ -190,6 +190,41 @@ def get_rgb(rc: RenderContext, camera_index: int, rgb_out: wp.array3d[wp.vec3]):
   )
 
 
+@wp.kernel
+def extract_hdr_kernel(
+  # In:
+  hdr_data: wp.array2d[wp.vec3],
+  hdr_adr: wp.array[int],
+  camera_index: int,
+  # Out:
+  hdr_out: wp.array3d[wp.vec3],
+):
+  """Extract linear HDR RGB data from the render context buffers for a camera."""
+  worldid, pixelid = wp.tid()
+  xid = pixelid % hdr_out.shape[2]
+  yid = pixelid // hdr_out.shape[2]
+
+  hdr_adr_offset = hdr_adr[camera_index]
+  hdr_out[worldid, yid, xid] = hdr_data[worldid, hdr_adr_offset + pixelid]
+
+
+def get_hdr(rc: RenderContext, camera_index: int, hdr_out: wp.array3d[wp.vec3]):
+  """Get linear HDR RGB data from the render context buffers for a given camera index.
+
+  Args:
+    rc: The render context on device.
+    camera_index: The index of the camera to get the HDR data for.
+    hdr_out: The output array to store HDR RGB data in, with shape
+      `(nworld, height, width)`.
+  """
+  wp.launch(
+    extract_hdr_kernel,
+    dim=(hdr_out.shape[0], hdr_out.shape[1] * hdr_out.shape[2]),
+    inputs=[rc.hdr_data, rc.hdr_adr, camera_index],
+    outputs=[hdr_out],
+  )
+
+
 def get_depth(rc: RenderContext, camera_index: int, depth_scale: float, depth_out: wp.array3d[float]):
   """Get the depth data output from the render context buffers for a given camera index.
 

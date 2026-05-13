@@ -36,9 +36,13 @@ from mujoco_warp._src.types import GeomType
 from mujoco_warp._src.types import Model
 from mujoco_warp._src.types import ObjType
 from mujoco_warp._src.types import RenderContext
+from mujoco_warp._src.types import ToneMapType
 from mujoco_warp._src.warp_util import event_scope
 
 wp.set_module_options({"enable_backward": False})
+
+_TONE_MAP_REINHARD = int(ToneMapType.REINHARD)
+_TONE_MAP_ACES = int(ToneMapType.ACES)
 
 
 @wp.func
@@ -579,6 +583,64 @@ def compute_lighting(
   return ndotl * attenuation * visible
 
 
+@wp.func
+def _clamp_rgb(color: wp.vec3) -> wp.vec3:
+  return wp.min(wp.max(color, wp.vec3(0.0, 0.0, 0.0)), wp.vec3(1.0, 1.0, 1.0))
+
+
+@wp.func
+def _pow_rgb(color: wp.vec3, exponent: float) -> wp.vec3:
+  return wp.vec3(
+    wp.pow(color[0], exponent),
+    wp.pow(color[1], exponent),
+    wp.pow(color[2], exponent),
+  )
+
+
+@wp.func
+def _tone_map_rgb(color: wp.vec3, tone_map: int) -> wp.vec3:
+  if tone_map == wp.static(_TONE_MAP_REINHARD):
+    return wp.cw_div(color, color + wp.vec3(1.0, 1.0, 1.0))
+
+  if tone_map == wp.static(_TONE_MAP_ACES):
+    a = 2.51
+    b = 0.03
+    c = 2.43
+    d = 0.59
+    e = 0.14
+    numerator = wp.cw_mul(color, a * color + wp.vec3(b, b, b))
+    denominator = wp.cw_mul(color, c * color + wp.vec3(d, d, d)) + wp.vec3(e, e, e)
+    return wp.cw_div(numerator, denominator)
+
+  return color
+
+
+@wp.func
+def _postprocess_rgb(
+  color: wp.vec3,
+  exposure: float,
+  gamma: float,
+  white_balance: wp.vec3,
+  contrast: float,
+  saturation: float,
+  tone_map: int,
+  noise: wp.vec3,
+) -> wp.vec3:
+  color = color * exposure
+  color = wp.cw_mul(color, white_balance)
+  color = _tone_map_rgb(color, tone_map)
+
+  luma = wp.dot(color, wp.vec3(0.2126, 0.7152, 0.0722))
+  color = wp.vec3(luma, luma, luma) + (color - wp.vec3(luma, luma, luma)) * saturation
+  color = (color - wp.vec3(0.5, 0.5, 0.5)) * contrast + wp.vec3(0.5, 0.5, 0.5)
+
+  color = _clamp_rgb(color)
+  gamma = wp.max(gamma, 1.0e-6)
+  color = _pow_rgb(color, 1.0 / gamma)
+  color = color + noise
+  return _clamp_rgb(color)
+
+
 @event_scope
 def render(m: Model, d: Data, rc: RenderContext):
   """Render the current frame.
@@ -591,6 +653,7 @@ def render(m: Model, d: Data, rc: RenderContext):
     rc: The render context on device.
   """
   rc.rgb_data.fill_(rc.background_color)
+  rc.hdr_data.fill_(wp.vec3(0.0, 0.0, 0.0))
   rc.depth_data.fill_(0.0)
   rc.seg_data.fill_(wp.vec2i(-1, -1))
 
@@ -633,9 +696,12 @@ def render(m: Model, d: Data, rc: RenderContext):
     cam_id_map: wp.array[int],
     ray: wp.array[wp.vec3],
     rgb_adr: wp.array[int],
+    hdr_adr: wp.array[int],
     depth_adr: wp.array[int],
     seg_adr: wp.array[int],
     render_rgb: wp.array[bool],
+    render_hdr: wp.array[bool],
+    use_rgb_postprocess: wp.array[bool],
     render_depth: wp.array[bool],
     render_seg: wp.array[bool],
     bvh_id: wp.uint64,
@@ -654,6 +720,7 @@ def render(m: Model, d: Data, rc: RenderContext):
     textures: wp.array[wp.Texture2D],
     # Out:
     rgb_out: wp.array2d[wp.uint32],
+    hdr_out: wp.array2d[wp.vec3],
     depth_out: wp.array2d[float],
     seg_out: wp.array2d[wp.vec2i],
   ):
@@ -673,7 +740,7 @@ def render(m: Model, d: Data, rc: RenderContext):
     if cam_idx == -1 or rayid_local < 0:
       return
 
-    if not render_rgb[cam_idx] and not render_depth[cam_idx] and not render_seg[cam_idx]:
+    if not render_rgb[cam_idx] and not render_hdr[cam_idx] and not render_depth[cam_idx] and not render_seg[cam_idx]:
       return
 
     # Map active camera index to MuJoCo camera ID
@@ -735,16 +802,22 @@ def render(m: Model, d: Data, rc: RenderContext):
 
     # Early Out
     if geom_id == -1:
-      if wp.static(rc.render_skybox) and render_rgb[cam_idx]:
-        skybox_color = sample_skybox(
+      background_color = wp.vec3(0.1, 0.1, 0.2)
+      if wp.static(rc.render_skybox) and (render_hdr[cam_idx] or (render_rgb[cam_idx] and not use_rgb_postprocess[cam_idx])):
+        background_color = sample_skybox(
           textures[wp.static(rc.skybox_tex_id)],
           wp.static(1.0 / float(rc.skybox_face_width)),
           ray_dir_world,
         )
+
+      if render_hdr[cam_idx]:
+        hdr_out[worldid, hdr_adr[cam_idx] + rayid_local] = background_color
+
+      if wp.static(rc.render_skybox) and render_rgb[cam_idx] and not use_rgb_postprocess[cam_idx]:
         rgb_out[worldid, rgb_adr[cam_idx] + rayid_local] = pack_rgba_to_uint32(
-          skybox_color[0] * 255.0,
-          skybox_color[1] * 255.0,
-          skybox_color[2] * 255.0,
+          background_color[0] * 255.0,
+          background_color[1] * 255.0,
+          background_color[2] * 255.0,
           255.0,
         )
       return
@@ -756,7 +829,7 @@ def render(m: Model, d: Data, rc: RenderContext):
       # between the ray and the optical axis.
       depth_out[worldid, depth_adr[cam_idx] + rayid_local] = dist * (-ray_dir_local_cam[2])
 
-    if not render_rgb[cam_idx]:
+    if not render_rgb[cam_idx] and not render_hdr[cam_idx]:
       return
 
     # Shade the pixel
@@ -771,8 +844,6 @@ def render(m: Model, d: Data, rc: RenderContext):
       color = mat_rgba[worldid % mat_rgba.shape[0], geom_matid[worldid % geom_matid.shape[0], geom_id]]
 
     base_color = wp.vec3(color[0], color[1], color[2])
-    hit_color = base_color
-
     if wp.static(rc.use_textures):
       if geom_id != -2:
         mat_id = geom_matid[worldid % geom_matid.shape[0], geom_id]
@@ -842,8 +913,13 @@ def render(m: Model, d: Data, rc: RenderContext):
       )
       result = result + base_color * light_contribution
 
-    hit_color = wp.min(result, wp.vec3(1.0, 1.0, 1.0))
-    hit_color = wp.max(hit_color, wp.vec3(0.0, 0.0, 0.0))
+    if render_hdr[cam_idx]:
+      hdr_out[worldid, hdr_adr[cam_idx] + rayid_local] = result
+
+    if not render_rgb[cam_idx] or use_rgb_postprocess[cam_idx]:
+      return
+
+    hit_color = _clamp_rgb(result)
 
     rgb_out[worldid, rgb_adr[cam_idx] + rayid_local] = pack_rgba_to_uint32(
       hit_color[0] * 255.0,
@@ -890,9 +966,12 @@ def render(m: Model, d: Data, rc: RenderContext):
       rc.cam_id_map,
       rc.ray,
       rc.rgb_adr,
+      rc.hdr_adr,
       rc.depth_adr,
       rc.seg_adr,
       rc.render_rgb,
+      rc.render_hdr,
+      rc.use_rgb_postprocess,
       rc.render_depth,
       rc.render_seg,
       rc.bvh_id,
@@ -912,7 +991,92 @@ def render(m: Model, d: Data, rc: RenderContext):
     ],
     outputs=[
       rc.rgb_data,
+      rc.hdr_data,
       rc.depth_data,
       rc.seg_data,
     ],
+  )
+
+  if not rc.has_rgb_postprocess:
+    return
+
+  @wp.kernel(module="unique", enable_backward=False)
+  def _postprocess_megakernel(
+    nrender: int,
+    cam_res: wp.array[wp.vec2i],
+    rgb_adr: wp.array[int],
+    hdr_adr: wp.array[int],
+    render_rgb: wp.array[bool],
+    use_rgb_postprocess: wp.array[bool],
+    tone_map: int,
+    rgb_exposure: wp.array2d[float],
+    rgb_gamma: wp.array2d[float],
+    rgb_white_balance: wp.array2d[wp.vec3],
+    rgb_contrast: wp.array2d[float],
+    rgb_saturation: wp.array2d[float],
+    rgb_noise: wp.array2d[wp.vec3],
+    # In:
+    hdr_in: wp.array2d[wp.vec3],
+    # Out:
+    rgb_out: wp.array2d[wp.uint32],
+  ):
+    worldid, rayid = wp.tid()
+
+    cam_idx = int(-1)
+    rayid_local = int(-1)
+    accum = int(0)
+    for i in range(nrender):
+      num_i = cam_res[i][0] * cam_res[i][1]
+      if rayid < accum + num_i:
+        cam_idx = i
+        rayid_local = rayid - accum
+        break
+      accum += num_i
+    if cam_idx == -1 or rayid_local < 0:
+      return
+
+    if not render_rgb[cam_idx] or not use_rgb_postprocess[cam_idx]:
+      return
+
+    rgb_index = rgb_adr[cam_idx] + rayid_local
+    hdr_index = hdr_adr[cam_idx] + rayid_local
+
+    color = _postprocess_rgb(
+      hdr_in[worldid, hdr_index],
+      rgb_exposure[worldid, cam_idx],
+      rgb_gamma[worldid, cam_idx],
+      rgb_white_balance[worldid, cam_idx],
+      rgb_contrast[worldid, cam_idx],
+      rgb_saturation[worldid, cam_idx],
+      tone_map,
+      rgb_noise[worldid, rgb_index],
+    )
+
+    rgb_out[worldid, rgb_index] = pack_rgba_to_uint32(
+      color[0] * 255.0,
+      color[1] * 255.0,
+      color[2] * 255.0,
+      255.0,
+    )
+
+  wp.launch(
+    kernel=_postprocess_megakernel,
+    dim=(d.nworld, rc.total_rays),
+    inputs=[
+      rc.nrender,
+      rc.cam_res,
+      rc.rgb_adr,
+      rc.hdr_adr,
+      rc.render_rgb,
+      rc.use_rgb_postprocess,
+      rc.tone_map,
+      rc.rgb_exposure,
+      rc.rgb_gamma,
+      rc.rgb_white_balance,
+      rc.rgb_contrast,
+      rc.rgb_saturation,
+      rc.rgb_noise,
+      rc.hdr_data,
+    ],
+    outputs=[rc.rgb_data],
   )

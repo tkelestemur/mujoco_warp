@@ -43,6 +43,21 @@ def _unpack_rgb(packed):
   return np.stack([r, g, b], axis=-1)
 
 
+_TWO_CAMERA_RGB_XML = """
+<mujoco>
+  <visual>
+    <headlight active="0" ambient="0 0 0" diffuse="0 0 0" specular="0 0 0"/>
+  </visual>
+  <worldbody>
+    <light pos="0 -2 3" dir="0 1 -1"/>
+    <geom type="sphere" pos="0 0 0.5" size="0.5" rgba="0.3 0.7 1.0 1"/>
+    <camera name="cam0" pos="0 -3 1" xyaxes="1 0 0 0 0.25 1" resolution="16 16" output="rgb"/>
+    <camera name="cam1" pos="0 -3 1" xyaxes="1 0 0 0 0.25 1" resolution="16 16" output="rgb"/>
+  </worldbody>
+</mujoco>
+"""
+
+
 class RenderTest(parameterized.TestCase):
   @parameterized.parameters(2, 512)
   def test_render(self, nworld: int):
@@ -99,6 +114,138 @@ class RenderTest(parameterized.TestCase):
     wp.capture_launch(capture.graph)
 
     _assert_eq(rgb_np, rc.rgb_data.numpy(), "rgb_data")
+
+  def test_render_rgb_default_compatible_with_hdr_enabled(self):
+    mjm, mjd, m, d = test_data.fixture("primitives.xml", nworld=1)
+
+    rc = mjw.create_render_context(
+      mjm,
+      nworld=1,
+      cam_res=(32, 32),
+      render_rgb=True,
+      render_hdr=False,
+    )
+    mjw.render(m, d, rc)
+    rgb = rc.rgb_data.numpy().copy()
+
+    rc_hdr = mjw.create_render_context(
+      mjm,
+      nworld=1,
+      cam_res=(32, 32),
+      render_rgb=True,
+      render_hdr=True,
+      use_rgb_postprocess=False,
+    )
+    mjw.render(m, d, rc_hdr)
+
+    np.testing.assert_array_equal(rc_hdr.rgb_data.numpy(), rgb)
+
+  def test_render_hdr_without_rgb(self):
+    mjm, mjd, m, d = test_data.fixture("primitives.xml", nworld=2)
+
+    rc = mjw.create_render_context(
+      mjm,
+      nworld=2,
+      cam_res=(32, 32),
+      render_rgb=False,
+      render_hdr=True,
+      render_depth=False,
+      render_seg=False,
+    )
+    mjw.render(m, d, rc)
+
+    self.assertEqual(rc.rgb_data.shape, (2, 0))
+    hdr = rc.hdr_data.numpy()
+    self.assertGreater(np.count_nonzero(hdr), 0)
+    self.assertNotEqual(np.unique(hdr.reshape(-1, 3), axis=0).shape[0], 1)
+
+  def test_rgb_postprocess_per_camera_exposure(self):
+    mjm, mjd, m, d = test_data.fixture(xml=_TWO_CAMERA_RGB_XML, nworld=1)
+
+    rc = mjw.create_render_context(
+      mjm,
+      nworld=1,
+      cam_res=(16, 16),
+      render_rgb=True,
+      render_hdr=True,
+      use_rgb_postprocess=True,
+      tone_map=mjw.ToneMapType.NONE,
+    )
+    rc.rgb_gamma.fill_(1.0)
+    wp.copy(rc.rgb_exposure, wp.array([[1.0, 0.25]], dtype=float))
+
+    mjw.render(m, d, rc)
+
+    rgb = rc.rgb_data.numpy()[0]
+    pixels = 16 * 16
+    cam0 = _unpack_rgb(rgb[:pixels]).astype(np.float32)
+    cam1 = _unpack_rgb(rgb[pixels:]).astype(np.float32)
+    self.assertGreater(cam0.mean(), cam1.mean())
+
+  def test_rgb_postprocess_saturation_contrast_and_noise(self):
+    mjm, mjd, m, d = test_data.fixture(xml=_TWO_CAMERA_RGB_XML, nworld=1)
+
+    rc = mjw.create_render_context(
+      mjm,
+      nworld=1,
+      cam_res=(16, 16),
+      render_rgb=True,
+      render_hdr=True,
+      use_rgb_postprocess=True,
+      tone_map=mjw.ToneMapType.NONE,
+      cam_active=[True, False],
+    )
+    rc.rgb_gamma.fill_(1.0)
+    rc.rgb_saturation.fill_(0.0)
+    mjw.render(m, d, rc)
+    grayscale = _unpack_rgb(rc.rgb_data.numpy()[0])
+    np.testing.assert_array_equal(grayscale[..., 0], grayscale[..., 1])
+    np.testing.assert_array_equal(grayscale[..., 1], grayscale[..., 2])
+
+    rc.rgb_saturation.fill_(1.0)
+    rc.rgb_contrast.fill_(0.0)
+    mjw.render(m, d, rc)
+    flat = _unpack_rgb(rc.rgb_data.numpy()[0])
+    self.assertLessEqual(np.max(np.abs(flat.astype(np.int16) - 127)), 1)
+
+    rc.rgb_contrast.fill_(1.0)
+    rc.rgb_exposure.fill_(0.2)
+    rc.rgb_noise.fill_(wp.vec3(0.0, 0.0, 0.0))
+    mjw.render(m, d, rc)
+    no_noise = _unpack_rgb(rc.rgb_data.numpy()[0]).astype(np.int16)
+
+    noise = np.zeros((1, 16 * 16, 3), dtype=np.float32)
+    noise[..., 0] = 0.1
+    wp.copy(rc.rgb_noise, wp.array(noise, dtype=wp.vec3))
+    mjw.render(m, d, rc)
+    with_noise = _unpack_rgb(rc.rgb_data.numpy()[0]).astype(np.int16)
+
+    self.assertGreater(np.mean(with_noise[..., 0]), np.mean(no_noise[..., 0]))
+    np.testing.assert_array_equal(with_noise[..., 1], no_noise[..., 1])
+    np.testing.assert_array_equal(with_noise[..., 2], no_noise[..., 2])
+
+  def test_rgb_postprocess_tone_map_modes(self):
+    mjm, mjd, m, d = test_data.fixture(xml=_TWO_CAMERA_RGB_XML, nworld=1)
+    rendered = []
+
+    for tone_map in (mjw.ToneMapType.NONE, mjw.ToneMapType.REINHARD, mjw.ToneMapType.ACES):
+      rc = mjw.create_render_context(
+        mjm,
+        nworld=1,
+        cam_res=(16, 16),
+        render_rgb=True,
+        render_hdr=True,
+        use_rgb_postprocess=True,
+        tone_map=tone_map,
+        cam_active=[True, False],
+      )
+      rc.rgb_gamma.fill_(1.0)
+      rc.rgb_exposure.fill_(20.0)
+      mjw.render(m, d, rc)
+      rendered.append(rc.rgb_data.numpy().copy())
+
+    self.assertFalse(np.array_equal(rendered[0], rendered[1]))
+    self.assertFalse(np.array_equal(rendered[1], rendered[2]))
 
   @parameterized.parameters(2, 512)
   def test_render_segmentation(self, nworld: int):

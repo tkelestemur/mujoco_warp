@@ -2777,6 +2777,9 @@ def create_render_context(
   flex_render_smooth: bool = True,
   use_precomputed_rays: bool = True,
   render_skybox: bool = False,
+  render_hdr: list[bool] | bool = False,
+  use_rgb_postprocess: list[bool] | bool = False,
+  tone_map: types.ToneMapType = types.ToneMapType.ACES,
 ) -> types.RenderContext:
   """Creates a render context on device.
 
@@ -2786,9 +2789,12 @@ def create_render_context(
     cam_res: The width and height to render each camera image. If None, uses the
              MuJoCo model values.
     render_rgb: Whether to render RGB images. If None, uses the MuJoCo model values.
+    render_hdr: Whether to render linear HDR RGB images.
     render_depth: Whether to render depth images. If None, uses the MuJoCo model values.
     render_seg: Whether to render segmentation (per-pixel object ID/type pairs).
       If None, uses the MuJoCo model values.
+    use_rgb_postprocess: Whether to produce RGB from HDR using postprocessing.
+    tone_map: Tone mapping mode for RGB postprocessing.
     use_textures: Whether to use textures.
     use_shadows: Whether to use shadows.
     use_ambient_lighting: Whether to add the renderer's hemispheric ambient
@@ -2926,15 +2932,34 @@ def create_render_context(
   elif isinstance(render_seg, bool):
     render_seg = [render_seg] * ncam
 
-  assert len(render_rgb) == ncam and len(render_depth) == ncam and len(render_seg) == ncam, (
-    f"render_rgb, render_depth, and render_seg must be a bool or a list of bools with length {ncam}"
+  if isinstance(render_hdr, bool):
+    render_hdr = [render_hdr] * ncam
+
+  if isinstance(use_rgb_postprocess, bool):
+    use_rgb_postprocess = [use_rgb_postprocess] * ncam
+
+  assert (
+    len(render_rgb) == ncam
+    and len(render_hdr) == ncam
+    and len(render_depth) == ncam
+    and len(render_seg) == ncam
+    and len(use_rgb_postprocess) == ncam
+  ), (
+    "render_rgb, render_hdr, render_depth, render_seg, and use_rgb_postprocess "
+    f"must be a bool or a list of bools with length {ncam}"
   )
 
+  # RGB postprocessing reads HDR as an intermediate even if the caller does not
+  # separately request HDR extraction.
+  render_hdr = [bool(render_hdr[idx] or use_rgb_postprocess[idx]) for idx in range(ncam)]
+
   rgb_adr = -1 * np.ones(ncam, dtype=int)
+  hdr_adr = -1 * np.ones(ncam, dtype=int)
   depth_adr = -1 * np.ones(ncam, dtype=int)
   seg_adr = -1 * np.ones(ncam, dtype=int)
   cam_res_np = cam_res_arr.numpy()
   ri = 0
+  hi = 0
   di = 0
   si = 0
   total = 0
@@ -2943,6 +2968,9 @@ def create_render_context(
     if render_rgb[idx]:
       rgb_adr[idx] = ri
       ri += cam_res_np[idx][0] * cam_res_np[idx][1]
+    if render_hdr[idx]:
+      hdr_adr[idx] = hi
+      hi += cam_res_np[idx][0] * cam_res_np[idx][1]
     if render_depth[idx]:
       depth_adr[idx] = di
       di += cam_res_np[idx][0] * cam_res_np[idx][1]
@@ -3024,9 +3052,21 @@ def create_render_context(
     ray=ray,
     rgb_data=wp.zeros((nworld, ri), dtype=wp.uint32),
     rgb_adr=wp.array(rgb_adr, dtype=int),
+    hdr_data=wp.zeros((nworld, hi), dtype=wp.vec3),
+    hdr_adr=wp.array(hdr_adr, dtype=int),
     depth_data=wp.zeros((nworld, di), dtype=wp.float32),
     depth_adr=wp.array(depth_adr, dtype=int),
     render_rgb=wp.array(render_rgb, dtype=bool),
+    render_hdr=wp.array(render_hdr, dtype=bool),
+    use_rgb_postprocess=wp.array(use_rgb_postprocess, dtype=bool),
+    has_rgb_postprocess=any(use_rgb_postprocess),
+    tone_map=int(tone_map),
+    rgb_exposure=wp.array(np.ones((nworld, ncam), dtype=np.float32), dtype=float),
+    rgb_gamma=wp.array(np.full((nworld, ncam), 2.2, dtype=np.float32), dtype=float),
+    rgb_white_balance=wp.array(np.ones((nworld, ncam, 3), dtype=np.float32), dtype=wp.vec3),
+    rgb_contrast=wp.array(np.ones((nworld, ncam), dtype=np.float32), dtype=float),
+    rgb_saturation=wp.array(np.ones((nworld, ncam), dtype=np.float32), dtype=float),
+    rgb_noise=wp.zeros((nworld, ri), dtype=wp.vec3),
     render_depth=wp.array(render_depth, dtype=bool),
     seg_data=wp.zeros((nworld, max(si, 1)), dtype=wp.vec2i),
     seg_adr=wp.array(seg_adr, dtype=int),

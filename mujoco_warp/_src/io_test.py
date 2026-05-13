@@ -1896,6 +1896,36 @@ class IOTest(parameterized.TestCase):
     _assert_eq(rgb_adr, [0, width * height, 2 * width * height], "rgb_adr")
     _assert_eq(depth_adr, [0, width * height, 2 * width * height], "depth_adr")
 
+  def test_hdr_and_postprocess_output_buffers(self):
+    """Test HDR and postprocessed RGB buffers, flags, and addresses."""
+    mjm, mjd, m, d = test_data.fixture(xml=_CAMERA_TEST_XML)
+    cam_res = [(64, 64), (32, 32), (16, 16)]
+    pixels = [w * h for w, h in cam_res]
+
+    rc = mjwarp.create_render_context(
+      mjm,
+      cam_res=cam_res,
+      render_rgb=[True, False, True],
+      render_hdr=[False, True, False],
+      use_rgb_postprocess=[True, False, False],
+    )
+
+    self.assertEqual(rc.rgb_data.shape, (1, pixels[0] + pixels[2]), "rgb_data")
+    self.assertEqual(rc.rgb_noise.shape, rc.rgb_data.shape, "rgb_noise")
+    self.assertEqual(rc.hdr_data.shape, (1, pixels[0] + pixels[1]), "hdr_data")
+    self.assertEqual(rc.rgb_exposure.shape, (1, 3), "rgb_exposure")
+    self.assertEqual(rc.rgb_gamma.shape, (1, 3), "rgb_gamma")
+    self.assertEqual(rc.rgb_white_balance.shape, (1, 3), "rgb_white_balance")
+    self.assertEqual(rc.rgb_contrast.shape, (1, 3), "rgb_contrast")
+    self.assertEqual(rc.rgb_saturation.shape, (1, 3), "rgb_saturation")
+
+    _assert_eq(rc.rgb_adr.numpy(), [0, -1, pixels[0]], "rgb_adr")
+    _assert_eq(rc.hdr_adr.numpy(), [0, pixels[0], -1], "hdr_adr")
+    _assert_eq(rc.render_rgb.numpy(), [True, False, True], "render_rgb")
+    _assert_eq(rc.render_hdr.numpy(), [True, True, False], "render_hdr")
+    _assert_eq(rc.use_rgb_postprocess.numpy(), [True, False, False], "use_rgb_postprocess")
+    self.assertTrue(rc.has_rgb_postprocess, "has_rgb_postprocess")
+
   def test_heterogeneous_camera(self):
     """Tests render context with different resolutions and output."""
     mjm, mjd, m, d = test_data.fixture(xml=_CAMERA_TEST_XML)
