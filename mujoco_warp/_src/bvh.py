@@ -526,7 +526,7 @@ def build_mesh_bvh(
   mjm: mujoco.MjModel,
   meshid: int,
   constructor: str = "sah",
-  leaf_size: int = 2,
+  leaf_size: int = 1,
 ) -> tuple[wp.Mesh, wp.vec3]:
   """Create a Warp mesh BVH from mesh data."""
   v_start = mjm.mesh_vertadr[meshid]
