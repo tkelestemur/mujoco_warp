@@ -374,6 +374,61 @@ def build_scene_bvh(mjm: mujoco.MjModel, mjd: mujoco.MjData, rc: RenderContext, 
     outputs=[rc.group_root],
   )
 
+  if rc.shadow_use_primary_bvh:
+    rc.shadow_bvh = rc.bvh
+    rc.shadow_bvh_id = rc.bvh_id
+    return
+
+  shadow_total_bvh_size = rc.shadow_bvh_ngeom + rc.bvh_nflexgeom
+  wp.launch(
+    kernel=_compute_bvh_bounds,
+    dim=(nworld, rc.shadow_bvh_ngeom),
+    inputs=[
+      geom_type,
+      geom_dataid,
+      geom_size,
+      geom_xpos,
+      geom_xmat,
+      shadow_total_bvh_size,
+      rc.shadow_enabled_geom_ids,
+      rc.mesh_bounds_size,
+      rc.hfield_bounds_size,
+      rc.shadow_lower,
+      rc.shadow_upper,
+      rc.shadow_group,
+    ],
+  )
+
+  wp.launch(
+    kernel=_compute_flex_bvh_bounds,
+    dim=(nworld, rc.bvh_nflexgeom),
+    inputs=[
+      flex_vertadr,
+      flex_vertnum,
+      flex_edge,
+      flex_radius,
+      flexvert_xpos,
+      rc.flex_geom_flexid,
+      rc.flex_geom_edgeid,
+      rc.shadow_bvh_ngeom,
+      shadow_total_bvh_size,
+      rc.shadow_lower,
+      rc.shadow_upper,
+      rc.shadow_group,
+    ],
+  )
+
+  shadow_bvh = wp.Bvh(rc.shadow_lower, rc.shadow_upper, groups=rc.shadow_group, constructor="sah")
+  rc.shadow_bvh = shadow_bvh
+  rc.shadow_bvh_id = shadow_bvh.id
+
+  wp.launch(
+    kernel=compute_bvh_group_roots,
+    dim=nworld,
+    inputs=[shadow_bvh.id],
+    outputs=[rc.shadow_group_root],
+  )
+
 
 def refit_scene_bvh(m: Model, d: Data, rc: RenderContext):
   total_bvh_size = rc.bvh_ngeom + rc.bvh_nflexgeom
@@ -418,6 +473,53 @@ def refit_scene_bvh(m: Model, d: Data, rc: RenderContext):
     )
 
   rc.bvh.refit()
+
+  if rc.shadow_use_primary_bvh:
+    rc.shadow_bvh = rc.bvh
+    rc.shadow_bvh_id = rc.bvh_id
+    return
+
+  shadow_total_bvh_size = rc.shadow_bvh_ngeom + rc.bvh_nflexgeom
+  wp.launch(
+    kernel=_compute_bvh_bounds,
+    dim=(d.nworld, rc.shadow_bvh_ngeom),
+    inputs=[
+      m.geom_type,
+      m.geom_dataid,
+      m.geom_size,
+      d.geom_xpos,
+      d.geom_xmat,
+      shadow_total_bvh_size,
+      rc.shadow_enabled_geom_ids,
+      rc.mesh_bounds_size,
+      rc.hfield_bounds_size,
+      rc.shadow_lower,
+      rc.shadow_upper,
+      rc.shadow_group,
+    ],
+  )
+
+  if rc.bvh_nflexgeom > 0:
+    wp.launch(
+      kernel=_compute_flex_bvh_bounds,
+      dim=(d.nworld, rc.bvh_nflexgeom),
+      inputs=[
+        m.flex_vertadr,
+        m.flex_vertnum,
+        m.flex_edge,
+        m.flex_radius,
+        d.flexvert_xpos,
+        rc.flex_geom_flexid,
+        rc.flex_geom_edgeid,
+        rc.shadow_bvh_ngeom,
+        shadow_total_bvh_size,
+        rc.shadow_lower,
+        rc.shadow_upper,
+        rc.shadow_group,
+      ],
+    )
+
+  rc.shadow_bvh.refit()
 
 
 def build_mesh_bvh(

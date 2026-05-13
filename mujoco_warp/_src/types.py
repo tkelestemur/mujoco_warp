@@ -1987,6 +1987,15 @@ class RenderContext:
     upper: upper bounds
     group: groups
     group_root: group roots
+    shadow_use_primary_bvh: whether shadow rays use the primary scene BVH
+    shadow_bvh_ngeom: number of shadow geometries in the shadow BVH
+    shadow_enabled_geom_ids: enabled shadow geometry ids
+    shadow_bvh: shadow scene BVH
+    shadow_bvh_id: shadow scene BVH id
+    shadow_lower: shadow lower bounds
+    shadow_upper: shadow upper bounds
+    shadow_group: shadow groups
+    shadow_group_root: shadow group roots
     ray: rays
     rgb_data: RGB data
     rgb_adr: RGB addresses
@@ -2048,6 +2057,15 @@ class RenderContext:
   upper: array("*", wp.vec3)
   group: array("*", int)
   group_root: array("*", int)
+  shadow_use_primary_bvh: bool
+  shadow_bvh_ngeom: int
+  shadow_enabled_geom_ids: array("*", int)
+  shadow_bvh: wp.Bvh
+  shadow_bvh_id: wp.uint64
+  shadow_lower: array("*", wp.vec3)
+  shadow_upper: array("*", wp.vec3)
+  shadow_group: array("*", int)
+  shadow_group_root: array("*", int)
   ray: array("*", wp.vec3)
   rgb_data: array("*", wp.uint32)
   rgb_adr: array("ncam", int)

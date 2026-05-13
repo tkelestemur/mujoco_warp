@@ -2773,6 +2773,7 @@ def create_render_context(
   use_shadows: bool = False,
   use_ambient_lighting: bool = True,
   enabled_geom_groups: list[int] = [0, 1, 2],
+  shadow_geom_groups: list[int] | None = None,
   cam_active: list[bool] | None = None,
   flex_render_smooth: bool = True,
   use_precomputed_rays: bool = True,
@@ -2795,6 +2796,8 @@ def create_render_context(
     use_ambient_lighting: Whether to add the renderer's hemispheric ambient
       lighting term before applying model lights.
     enabled_geom_groups: The geom groups to render.
+    shadow_geom_groups: The geom groups to use for shadow rays. If None, shadow
+      rays use the same BVH as primary render rays.
     cam_active: List of booleans indicating which cameras to include in rendering.
                 If None, all cameras are included.
     flex_render_smooth: Whether to render flex meshes smoothly.
@@ -2825,6 +2828,14 @@ def create_render_context(
   nmesh = mjm.nmesh
   geom_enabled_mask = np.isin(mjm.geom_group, list(enabled_geom_groups))
   geom_enabled_idx = np.nonzero(geom_enabled_mask)[0]
+  if shadow_geom_groups is None:
+    shadow_geom_enabled_mask = geom_enabled_mask
+    shadow_geom_enabled_idx = geom_enabled_idx
+    shadow_use_primary_bvh = True
+  else:
+    shadow_geom_enabled_mask = np.isin(mjm.geom_group, list(shadow_geom_groups))
+    shadow_geom_enabled_idx = np.nonzero(shadow_geom_enabled_mask)[0]
+    shadow_use_primary_bvh = False
 
   mesh_registry = {}
   mesh_bvh_id = [wp.uint64(0) for _ in range(nmesh)]
@@ -2841,7 +2852,9 @@ def create_render_context(
 
   # HField BVHs
   nhfield = mjm.nhfield
-  hfield_geom_mask = geom_enabled_mask & (mjm.geom_type == types.GeomType.HFIELD) & (mjm.geom_dataid >= 0)
+  hfield_geom_mask = (geom_enabled_mask | shadow_geom_enabled_mask) & (mjm.geom_type == types.GeomType.HFIELD) & (
+    mjm.geom_dataid >= 0
+  )
   used_hfield_id = set(mjm.geom_dataid[hfield_geom_mask].astype(int))
   hfield_registry = {}
   hfield_bvh_id = [wp.uint64(0) for _ in range(nhfield)]
@@ -2985,6 +2998,24 @@ def create_render_context(
     offset += img_w * img_h
 
   bvh_ngeom = len(geom_enabled_idx)
+  bvh_nflexgeom = len(flex_geom_flexid)
+  enabled_geom_ids = wp.array(geom_enabled_idx, dtype=int)
+  shadow_bvh_ngeom = len(shadow_geom_enabled_idx)
+  shadow_enabled_geom_ids = enabled_geom_ids if shadow_use_primary_bvh else wp.array(shadow_geom_enabled_idx, dtype=int)
+  lower = wp.zeros(nworld * (bvh_ngeom + bvh_nflexgeom), dtype=wp.vec3)
+  upper = wp.zeros(nworld * (bvh_ngeom + bvh_nflexgeom), dtype=wp.vec3)
+  group = wp.zeros(nworld * (bvh_ngeom + bvh_nflexgeom), dtype=int)
+  group_root = wp.zeros(nworld, dtype=int)
+  if shadow_use_primary_bvh:
+    shadow_lower = lower
+    shadow_upper = upper
+    shadow_group = group
+    shadow_group_root = group_root
+  else:
+    shadow_lower = wp.zeros(nworld * (shadow_bvh_ngeom + bvh_nflexgeom), dtype=wp.vec3)
+    shadow_upper = wp.zeros(nworld * (shadow_bvh_ngeom + bvh_nflexgeom), dtype=wp.vec3)
+    shadow_group = wp.zeros(nworld * (shadow_bvh_ngeom + bvh_nflexgeom), dtype=int)
+    shadow_group_root = wp.zeros(nworld, dtype=int)
 
   rc = types.RenderContext(
     nrender=ncam,
@@ -2999,7 +3030,7 @@ def create_render_context(
     skybox_tex_id=skybox_tex_id,
     skybox_face_width=skybox_face_width,
     bvh_ngeom=bvh_ngeom,
-    enabled_geom_ids=wp.array(geom_enabled_idx, dtype=int),
+    enabled_geom_ids=enabled_geom_ids,
     mesh_registry=mesh_registry,
     mesh_bvh_id=mesh_bvh_id_arr,
     mesh_bounds_size=mesh_bounds_size_arr,
@@ -3016,16 +3047,25 @@ def create_render_context(
     flex_bvh_id=wp.array(flex_bvh_id, dtype=wp.uint64),
     flex_group_root=wp.array(flex_group_root, dtype=int),
     flex_render_smooth=flex_render_smooth,
-    bvh_nflexgeom=len(flex_geom_flexid),
+    bvh_nflexgeom=bvh_nflexgeom,
     flex_dim_np=mjm.flex_dim,
     flex_geom_flexid=wp.array(flex_geom_flexid, dtype=int),
     flex_geom_edgeid=wp.array(flex_geom_edgeid, dtype=int),
     bvh=None,
     bvh_id=None,
-    lower=wp.zeros(nworld * (bvh_ngeom + len(flex_geom_flexid)), dtype=wp.vec3),
-    upper=wp.zeros(nworld * (bvh_ngeom + len(flex_geom_flexid)), dtype=wp.vec3),
-    group=wp.zeros(nworld * (bvh_ngeom + len(flex_geom_flexid)), dtype=int),
-    group_root=wp.zeros(nworld, dtype=int),
+    lower=lower,
+    upper=upper,
+    group=group,
+    group_root=group_root,
+    shadow_use_primary_bvh=shadow_use_primary_bvh,
+    shadow_bvh_ngeom=shadow_bvh_ngeom,
+    shadow_enabled_geom_ids=shadow_enabled_geom_ids,
+    shadow_bvh=None,
+    shadow_bvh_id=None,
+    shadow_lower=shadow_lower,
+    shadow_upper=shadow_upper,
+    shadow_group=shadow_group,
+    shadow_group_root=shadow_group_root,
     ray=ray,
     rgb_data=wp.zeros((nworld, ri), dtype=wp.uint32),
     rgb_adr=wp.array(rgb_adr, dtype=int),

@@ -43,6 +43,15 @@ class MinimalRenderContext:
   upper: wp.array
   group: wp.array
   group_root: wp.array
+  shadow_use_primary_bvh: bool = True
+  shadow_bvh_ngeom: int = 0
+  shadow_enabled_geom_ids: wp.array = None
+  shadow_lower: wp.array = None
+  shadow_upper: wp.array = None
+  shadow_group: wp.array = None
+  shadow_group_root: wp.array = None
+  shadow_bvh: wp.Bvh = None
+  shadow_bvh_id: wp.uint64 = None
   bvh: wp.Bvh = None
   bvh_id: wp.uint64 = None
 
@@ -54,18 +63,30 @@ def _create_minimal_context(mjm, nworld, enabled_geom_groups=None):
   geom_enabled_idx = [i for i in range(mjm.ngeom) if mjm.geom_group[i] in enabled_geom_groups]
   bvh_ngeom = len(geom_enabled_idx)
 
+  enabled_geom_ids = wp.array(geom_enabled_idx, dtype=int)
+  lower = wp.zeros(nworld * bvh_ngeom, dtype=wp.vec3)
+  upper = wp.zeros(nworld * bvh_ngeom, dtype=wp.vec3)
+  group = wp.zeros(nworld * bvh_ngeom, dtype=int)
+  group_root = wp.zeros(nworld, dtype=int)
+
   return MinimalRenderContext(
     bvh_ngeom=bvh_ngeom,
     bvh_nflexgeom=0,
-    enabled_geom_ids=wp.array(geom_enabled_idx, dtype=int),
+    enabled_geom_ids=enabled_geom_ids,
     mesh_bounds_size=wp.zeros(max(mjm.nmesh, 1), dtype=wp.vec3),
     hfield_bounds_size=wp.zeros(max(mjm.nhfield, 1), dtype=wp.vec3),
     flex_geom_flexid=wp.zeros(max(mjm.nflex, 1), dtype=int),
     flex_geom_edgeid=wp.zeros(max(mjm.nflex, 1), dtype=int),
-    lower=wp.zeros(nworld * bvh_ngeom, dtype=wp.vec3),
-    upper=wp.zeros(nworld * bvh_ngeom, dtype=wp.vec3),
-    group=wp.zeros(nworld * bvh_ngeom, dtype=int),
-    group_root=wp.zeros(nworld, dtype=int),
+    lower=lower,
+    upper=upper,
+    group=group,
+    group_root=group_root,
+    shadow_bvh_ngeom=bvh_ngeom,
+    shadow_enabled_geom_ids=enabled_geom_ids,
+    shadow_lower=lower,
+    shadow_upper=upper,
+    shadow_group=group,
+    shadow_group_root=group_root,
   )
 
 

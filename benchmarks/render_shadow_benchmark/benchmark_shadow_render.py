@@ -108,6 +108,7 @@ class _Case:
   label: str
   use_shadows: bool
   light_castshadow: bool
+  shadow_geom_groups: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,9 @@ class _Timing:
 
 CASES = {
   "shadows": _Case("shadows", use_shadows=True, light_castshadow=True),
+  "shadow_collision": _Case(
+    "shadow_collision", use_shadows=True, light_castshadow=True, shadow_geom_groups=(0, 4)
+  ),
   "no_light_shadows": _Case("no_light_shadows", use_shadows=True, light_castshadow=False),
   "no_shadows": _Case("no_shadows", use_shadows=False, light_castshadow=True),
 }
@@ -213,7 +217,14 @@ def _load_model(light_castshadow: bool, scene: Path) -> tuple[mujoco.MjModel, mu
   return mjm, mjd
 
 
-def _make_context(mjm: mujoco.MjModel, nworld: int, width: int, height: int, use_shadows: bool) -> mjw.RenderContext:
+def _make_context(
+  mjm: mujoco.MjModel,
+  nworld: int,
+  width: int,
+  height: int,
+  use_shadows: bool,
+  shadow_geom_groups: tuple[int, ...] | None,
+) -> mjw.RenderContext:
   return mjw.create_render_context(
     mjm,
     nworld=nworld,
@@ -224,6 +235,7 @@ def _make_context(mjm: mujoco.MjModel, nworld: int, width: int, height: int, use
     use_textures=False,
     use_shadows=use_shadows,
     use_ambient_lighting=True,
+    shadow_geom_groups=list(shadow_geom_groups) if shadow_geom_groups is not None else None,
     render_skybox=False,
   )
 
@@ -296,8 +308,8 @@ def main():
   parser.add_argument(
     "--cases",
     type=_parse_cases,
-    default=_parse_cases("no_shadows,no_light_shadows,shadows"),
-    help="comma-separated cases: no_shadows,no_light_shadows,shadows",
+    default=_parse_cases("no_shadows,no_light_shadows,shadows,shadow_collision"),
+    help="comma-separated cases: no_shadows,no_light_shadows,shadows,shadow_collision",
   )
   parser.add_argument(
     "--render-only",
@@ -336,13 +348,26 @@ def main():
       mjm, mjd = _load_model(case.light_castshadow, scene)
       m = mjw.put_model(mjm)
       d = mjw.put_data(mjm, mjd, nworld=args.nworld)
-      rc = _make_context(mjm, args.nworld, args.width, args.height, use_shadows=case.use_shadows)
+      rc = _make_context(
+        mjm,
+        args.nworld,
+        args.width,
+        args.height,
+        use_shadows=case.use_shadows,
+        shadow_geom_groups=case.shadow_geom_groups,
+      )
       enabled_mesh_geoms = sum(
         mjm.geom_type[i] == mujoco.mjtGeom.mjGEOM_MESH and mjm.geom_group[i] in (0, 1, 2) for i in range(mjm.ngeom)
       )
+      shadow_mesh_geoms = sum(
+        mjm.geom_type[i] == mujoco.mjtGeom.mjGEOM_MESH
+        and mjm.geom_group[i] in (case.shadow_geom_groups if case.shadow_geom_groups is not None else (0, 1, 2))
+        for i in range(mjm.ngeom)
+      )
       print(
         f"Case: {case.label}, use_shadows={case.use_shadows}, light_castshadow={case.light_castshadow}, "
-        f"ngeom={mjm.ngeom}, nmesh={mjm.nmesh}, enabled_mesh_geoms={enabled_mesh_geoms}, nlight={mjm.nlight}"
+        f"ngeom={mjm.ngeom}, nmesh={mjm.nmesh}, enabled_mesh_geoms={enabled_mesh_geoms}, "
+        f"shadow_mesh_geoms={shadow_mesh_geoms}, nlight={mjm.nlight}"
       )
       timings.append(
         _benchmark(
@@ -368,6 +393,8 @@ def main():
     print(f"shadow_slowdown={by_label['no_shadows'].world_fps / by_label['shadows'].world_fps:.2f}x")
   if "no_light_shadows" in by_label and "shadows" in by_label:
     print(f"shadow_ray_cost={by_label['no_light_shadows'].world_fps / by_label['shadows'].world_fps:.2f}x")
+  if "shadows" in by_label and "shadow_collision" in by_label:
+    print(f"shadow_collision_speedup={by_label['shadow_collision'].world_fps / by_label['shadows'].world_fps:.2f}x")
 
 
 if __name__ == "__main__":
