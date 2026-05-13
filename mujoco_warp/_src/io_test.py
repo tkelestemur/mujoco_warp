@@ -1896,6 +1896,31 @@ class IOTest(parameterized.TestCase):
     _assert_eq(rgb_adr, [0, width * height, 2 * width * height], "rgb_adr")
     _assert_eq(depth_adr, [0, width * height, 2 * width * height], "depth_adr")
 
+  def test_shadow_map_buffers(self):
+    """Test that shadow map options allocate the expected per-world/light buffers."""
+    mjm, mjd, m, d = test_data.fixture(xml=_CAMERA_TEST_XML, nworld=3)
+    rc = mjwarp.create_render_context(
+      mjm,
+      nworld=3,
+      cam_res=(16, 16),
+      use_shadows=True,
+      use_shadow_maps=True,
+      shadow_map_size=16,
+      shadow_map_bias=0.02,
+    )
+
+    self.assertTrue(rc.use_shadows, "use_shadows")
+    self.assertTrue(rc.use_shadow_maps, "use_shadow_maps")
+    self.assertEqual(rc.shadow_map_size, 16, "shadow_map_size")
+    self.assertEqual(rc.shadow_map_bias, 0.02, "shadow_map_bias")
+    self.assertEqual(rc.shadow_map_depth.shape, (3, mjm.nlight, 16 * 16), "shadow_map_depth")
+
+  def test_shadow_map_size_must_be_positive(self):
+    mjm, mjd, m, d = test_data.fixture(xml=_CAMERA_TEST_XML)
+
+    with self.assertRaisesRegex(AssertionError, "shadow_map_size must be positive"):
+      mjwarp.create_render_context(mjm, shadow_map_size=0)
+
   def test_heterogeneous_camera(self):
     """Tests render context with different resolutions and output."""
     mjm, mjd, m, d = test_data.fixture(xml=_CAMERA_TEST_XML)

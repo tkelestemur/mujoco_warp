@@ -2820,6 +2820,8 @@ def create_render_context(
   Returns:
     The render context containing rendering fields and output arrays on device.
   """
+  assert shadow_map_size > 0, f"shadow_map_size must be positive (got {shadow_map_size})"
+
   mjd = mujoco.MjData(mjm)
   mujoco.mj_forward(mjm, mjd)
 
