@@ -549,6 +549,8 @@ def compute_lighting(
   ndotl = wp.max(0.0, wp.dot(normal, L))
   if ndotl == 0.0:
     return light_contribution
+  if attenuation == 0.0:
+    return light_contribution
 
   visible = float(1.0)
 
