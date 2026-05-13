@@ -109,6 +109,7 @@ class _Case:
   use_shadows: bool
   light_castshadow: bool
   shadow_geom_groups: tuple[int, ...] | None = None
+  use_shadow_maps: bool = False
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,7 @@ class _Timing:
 
 CASES = {
   "shadows": _Case("shadows", use_shadows=True, light_castshadow=True),
+  "shadow_map": _Case("shadow_map", use_shadows=True, light_castshadow=True, use_shadow_maps=True),
   "shadow_collision": _Case(
     "shadow_collision", use_shadows=True, light_castshadow=True, shadow_geom_groups=(0, 4)
   ),
@@ -224,6 +226,9 @@ def _make_context(
   height: int,
   use_shadows: bool,
   shadow_geom_groups: tuple[int, ...] | None,
+  use_shadow_maps: bool,
+  shadow_map_size: int,
+  shadow_map_bias: float,
 ) -> mjw.RenderContext:
   return mjw.create_render_context(
     mjm,
@@ -234,6 +239,9 @@ def _make_context(
     render_seg=False,
     use_textures=False,
     use_shadows=use_shadows,
+    use_shadow_maps=use_shadow_maps,
+    shadow_map_size=shadow_map_size,
+    shadow_map_bias=shadow_map_bias,
     use_ambient_lighting=True,
     shadow_geom_groups=list(shadow_geom_groups) if shadow_geom_groups is not None else None,
     render_skybox=False,
@@ -305,11 +313,13 @@ def main():
     help="benchmark scene to render",
   )
   parser.add_argument("--fr3-dir", type=str, default=None, help="path to mujoco_menagerie/franka_fr3")
+  parser.add_argument("--shadow-map-size", type=int, default=64)
+  parser.add_argument("--shadow-map-bias", type=float, default=0.01)
   parser.add_argument(
     "--cases",
     type=_parse_cases,
-    default=_parse_cases("no_shadows,no_light_shadows,shadows,shadow_collision"),
-    help="comma-separated cases: no_shadows,no_light_shadows,shadows,shadow_collision",
+    default=_parse_cases("no_shadows,no_light_shadows,shadows,shadow_map,shadow_collision"),
+    help="comma-separated cases: no_shadows,no_light_shadows,shadows,shadow_map,shadow_collision",
   )
   parser.add_argument(
     "--render-only",
@@ -355,6 +365,9 @@ def main():
         args.height,
         use_shadows=case.use_shadows,
         shadow_geom_groups=case.shadow_geom_groups,
+        use_shadow_maps=case.use_shadow_maps,
+        shadow_map_size=args.shadow_map_size,
+        shadow_map_bias=args.shadow_map_bias,
       )
       enabled_mesh_geoms = sum(
         mjm.geom_type[i] == mujoco.mjtGeom.mjGEOM_MESH and mjm.geom_group[i] in (0, 1, 2) for i in range(mjm.ngeom)
@@ -366,6 +379,7 @@ def main():
       )
       print(
         f"Case: {case.label}, use_shadows={case.use_shadows}, light_castshadow={case.light_castshadow}, "
+        f"use_shadow_maps={case.use_shadow_maps}, "
         f"ngeom={mjm.ngeom}, nmesh={mjm.nmesh}, enabled_mesh_geoms={enabled_mesh_geoms}, "
         f"shadow_mesh_geoms={shadow_mesh_geoms}, nlight={mjm.nlight}"
       )
@@ -395,6 +409,8 @@ def main():
     print(f"shadow_ray_cost={by_label['no_light_shadows'].world_fps / by_label['shadows'].world_fps:.2f}x")
   if "shadows" in by_label and "shadow_collision" in by_label:
     print(f"shadow_collision_speedup={by_label['shadow_collision'].world_fps / by_label['shadows'].world_fps:.2f}x")
+  if "shadows" in by_label and "shadow_map" in by_label:
+    print(f"shadow_map_speedup={by_label['shadow_map'].world_fps / by_label['shadows'].world_fps:.2f}x")
 
 
 if __name__ == "__main__":

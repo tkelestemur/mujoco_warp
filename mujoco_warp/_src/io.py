@@ -2771,6 +2771,9 @@ def create_render_context(
   render_seg: list[bool] | bool | None = None,
   use_textures: bool = True,
   use_shadows: bool = False,
+  use_shadow_maps: bool = False,
+  shadow_map_size: int = 64,
+  shadow_map_bias: float = 0.01,
   use_ambient_lighting: bool = True,
   enabled_geom_groups: list[int] = [0, 1, 2],
   shadow_geom_groups: list[int] | None = None,
@@ -2793,6 +2796,10 @@ def create_render_context(
       If None, uses the MuJoCo model values.
     use_textures: Whether to use textures.
     use_shadows: Whether to use shadows.
+    use_shadow_maps: Whether to use light-space shadow maps for supported lights.
+      Unsupported lights fall back to ray-cast shadows.
+    shadow_map_size: Shadow map width and height in pixels.
+    shadow_map_bias: Depth bias used for shadow map comparisons.
     use_ambient_lighting: Whether to add the renderer's hemispheric ambient
       lighting term before applying model lights.
     enabled_geom_groups: The geom groups to render.
@@ -3024,6 +3031,9 @@ def create_render_context(
     use_textures=use_textures,
     use_shadows=use_shadows,
     use_ambient_lighting=use_ambient_lighting,
+    use_shadow_maps=use_shadow_maps,
+    shadow_map_size=shadow_map_size,
+    shadow_map_bias=shadow_map_bias,
     background_color=render_util.pack_rgba_to_uint32(0.1 * 255.0, 0.1 * 255.0, 0.2 * 255.0, 1.0 * 255.0),
     use_precomputed_rays=use_precomputed_rays,
     render_skybox=render_skybox,
@@ -3066,6 +3076,7 @@ def create_render_context(
     shadow_upper=shadow_upper,
     shadow_group=shadow_group,
     shadow_group_root=shadow_group_root,
+    shadow_map_depth=wp.zeros((nworld, max(mjm.nlight, 1), max(shadow_map_size * shadow_map_size, 1)), dtype=wp.float32),
     ray=ray,
     rgb_data=wp.zeros((nworld, ri), dtype=wp.uint32),
     rgb_adr=wp.array(rgb_adr, dtype=int),

@@ -1961,6 +1961,9 @@ class RenderContext:
     use_textures: whether to use textures
     use_shadows: whether to use shadows
     use_ambient_lighting: whether to use ambient lighting
+    use_shadow_maps: whether to use light-space shadow maps for supported lights
+    shadow_map_size: shadow map width and height in pixels
+    shadow_map_bias: depth bias used for shadow map comparisons
     use_precomputed_rays: whether to use precomputed rays
     bvh_ngeom: number of geometries in the BVH
     enabled_geom_ids: enabled geometry ids
@@ -1996,6 +1999,7 @@ class RenderContext:
     shadow_upper: shadow upper bounds
     shadow_group: shadow groups
     shadow_group_root: shadow group roots
+    shadow_map_depth: light-space shadow depths
     ray: rays
     rgb_data: RGB data
     rgb_adr: RGB addresses
@@ -2024,6 +2028,9 @@ class RenderContext:
   use_textures: bool
   use_shadows: bool
   use_ambient_lighting: bool
+  use_shadow_maps: bool
+  shadow_map_size: int
+  shadow_map_bias: float
   background_color: wp.uint32
   use_precomputed_rays: bool
   render_skybox: bool
@@ -2066,6 +2073,7 @@ class RenderContext:
   shadow_upper: array("*", wp.vec3)
   shadow_group: array("*", int)
   shadow_group_root: array("*", int)
+  shadow_map_depth: array("nworld", "nlight", "*", float)
   ray: array("*", wp.vec3)
   rgb_data: array("*", wp.uint32)
   rgb_adr: array("ncam", int)

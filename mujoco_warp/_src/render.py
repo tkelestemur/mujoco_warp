@@ -151,6 +151,66 @@ def sample_skybox(
   return wp.vec3(color[0], color[1], color[2])
 
 
+@wp.func
+def light_frame(lightdir: wp.vec3) -> Tuple[wp.vec3, wp.vec3, wp.vec3]:
+  forward = wp.normalize(lightdir)
+  ref = wp.vec3(0.0, 0.0, 1.0)
+  if wp.abs(forward[2]) > 0.99:
+    ref = wp.vec3(0.0, 1.0, 0.0)
+
+  right = wp.normalize(wp.cross(forward, ref))
+  up = wp.normalize(wp.cross(right, forward))
+  return forward, right, up
+
+
+@wp.func
+def spot_shadow_map_ray(
+  lightdir: wp.vec3,
+  texel_id: int,
+  map_size: int,
+) -> wp.vec3:
+  forward, right, up = light_frame(lightdir)
+  px = texel_id % map_size
+  py = texel_id // map_size
+  inv_size = 1.0 / float(map_size)
+  # The renderer's spotlight falloff uses 0.85 as the outer cone cosine.
+  tan_outer = 0.6197443384
+  sx = ((float(px) + 0.5) * inv_size * 2.0 - 1.0) * tan_outer
+  sy = ((float(py) + 0.5) * inv_size * 2.0 - 1.0) * tan_outer
+  return wp.normalize(forward + right * sx + up * sy)
+
+
+@wp.func
+def sample_spot_shadow_map(
+  shadow_map_depth: wp.array3d[float],
+  worldid: int,
+  lightid: int,
+  map_size: int,
+  bias: float,
+  lightpos: wp.vec3,
+  lightdir: wp.vec3,
+  hitpoint: wp.vec3,
+) -> bool:
+  forward, right, up = light_frame(lightdir)
+  light_to_point = hitpoint - lightpos
+  z = wp.dot(light_to_point, forward)
+  if z <= 0.0:
+    return False
+
+  tan_outer = 0.6197443384
+  x = math.safe_div(wp.dot(light_to_point, right), z * tan_outer)
+  y = math.safe_div(wp.dot(light_to_point, up), z * tan_outer)
+  if x < -1.0 or x > 1.0 or y < -1.0 or y > 1.0:
+    return False
+
+  u = (x + 1.0) * 0.5
+  v = (y + 1.0) * 0.5
+  px = int(wp.clamp(wp.floor(u * float(map_size)), 0.0, float(map_size - 1)))
+  py = int(wp.clamp(wp.floor(v * float(map_size)), 0.0, float(map_size - 1)))
+  shadow_z = shadow_map_depth[worldid, lightid, py * map_size + px]
+  return shadow_z > 0.0 and shadow_z < z - bias
+
+
 # TODO: Investigate combining cast_ray and cast_ray_first_hit
 @wp.func
 def cast_ray(
@@ -503,6 +563,9 @@ def compute_lighting(
   flexvert_xpos_in: wp.array2d[wp.vec3],
   # In:
   use_shadows: bool,
+  use_shadow_maps: bool,
+  shadow_map_size: int,
+  shadow_map_bias: float,
   shadow_bvh_id: wp.uint64,
   shadow_group_root: int,
   shadow_bvh_ngeom: int,
@@ -515,6 +578,8 @@ def compute_lighting(
   flex_geom_edgeid: wp.array[int],
   flex_bvh_id: wp.array[wp.uint64],
   flex_group_root: wp.array2d[int],
+  shadow_map_depth: wp.array3d[float],
+  lightid: int,
   lightactive: bool,
   lighttype: int,
   lightcastshadow: bool,
@@ -555,43 +620,55 @@ def compute_lighting(
   visible = float(1.0)
 
   if use_shadows and lightcastshadow:
-    # Nudge the origin slightly along the surface normal to avoid
-    # self-intersection when casting shadow rays
-    eps = 1.0e-4
-    shadow_origin = hitpoint + normal * eps
-    # Distance-limited shadows: cap by dist_to_light (for non-directional)
-    max_t = float(dist_to_light - 1.0e-3)
-    if lighttype == 1:  # directional light
-      max_t = float(1.0e8)
+    shadow_hit = False
+    if use_shadow_maps and lighttype == 0:
+      shadow_hit = sample_spot_shadow_map(
+        shadow_map_depth,
+        worldid,
+        lightid,
+        shadow_map_size,
+        shadow_map_bias,
+        lightpos,
+        lightdir,
+        hitpoint,
+      )
+    else:
+      # Nudge the origin slightly along the surface normal to avoid
+      # self-intersection when casting shadow rays
+      eps = 1.0e-4
+      shadow_origin = hitpoint + normal * eps
+      # Distance-limited shadows: cap by dist_to_light (for non-directional)
+      max_t = float(dist_to_light - 1.0e-3)
+      if lighttype == 1:  # directional light
+        max_t = float(1.0e8)
 
-    shadow_hit = cast_ray_first_hit(
-      geom_type,
-      geom_dataid,
-      geom_size,
-      flex_vertadr,
-      flex_edge,
-      flex_radius,
-      geom_xpos_in,
-      geom_xmat_in,
-      flexvert_xpos_in,
-      shadow_bvh_id,
-      shadow_group_root,
-      worldid,
-      shadow_bvh_ngeom,
-      shadow_bvh_nflexgeom,
-      shadow_enabled_geom_ids,
-      mesh_bvh_id,
-      hfield_bvh_id,
-      flex_geom_flexid,
-      flex_geom_edgeid,
-      flex_bvh_id,
-      flex_group_root,
-      shadow_origin,
-      L,
-      max_t,
-      cull_backfaces,
-    )
-
+      shadow_hit = cast_ray_first_hit(
+        geom_type,
+        geom_dataid,
+        geom_size,
+        flex_vertadr,
+        flex_edge,
+        flex_radius,
+        geom_xpos_in,
+        geom_xmat_in,
+        flexvert_xpos_in,
+        shadow_bvh_id,
+        shadow_group_root,
+        worldid,
+        shadow_bvh_ngeom,
+        shadow_bvh_nflexgeom,
+        shadow_enabled_geom_ids,
+        mesh_bvh_id,
+        hfield_bvh_id,
+        flex_geom_flexid,
+        flex_geom_edgeid,
+        flex_bvh_id,
+        flex_group_root,
+        shadow_origin,
+        L,
+        max_t,
+        cull_backfaces,
+      )
     if shadow_hit:
       visible = 0.3
 
@@ -612,6 +689,118 @@ def render(m: Model, d: Data, rc: RenderContext):
   rc.rgb_data.fill_(rc.background_color)
   rc.depth_data.fill_(0.0)
   rc.seg_data.fill_(wp.vec2i(-1, -1))
+
+  @wp.kernel(module="unique", enable_backward=False)
+  def _render_shadow_map_kernel(
+    # Model:
+    geom_type: wp.array[int],
+    geom_dataid: wp.array2d[int],
+    geom_size: wp.array2d[wp.vec3],
+    light_type: wp.array2d[int],
+    light_castshadow: wp.array2d[bool],
+    light_active: wp.array2d[bool],
+    flex_vertadr: wp.array[int],
+    flex_edge: wp.array[wp.vec2i],
+    flex_radius: wp.array[float],
+    # Data in:
+    geom_xpos_in: wp.array2d[wp.vec3],
+    geom_xmat_in: wp.array2d[wp.mat33],
+    light_xpos_in: wp.array2d[wp.vec3],
+    light_xdir_in: wp.array2d[wp.vec3],
+    flexvert_xpos_in: wp.array2d[wp.vec3],
+    # In:
+    shadow_bvh_ngeom: int,
+    shadow_bvh_nflexgeom: int,
+    shadow_bvh_id: wp.uint64,
+    shadow_group_root: wp.array[int],
+    shadow_enabled_geom_ids: wp.array[int],
+    mesh_bvh_id: wp.array[wp.uint64],
+    hfield_bvh_id: wp.array[wp.uint64],
+    flex_bvh_id: wp.array[wp.uint64],
+    flex_group_root: wp.array2d[int],
+    flex_geom_flexid: wp.array[int],
+    flex_geom_edgeid: wp.array[int],
+    # Out:
+    shadow_map_depth: wp.array3d[float],
+  ):
+    worldid, lightid, texel_id = wp.tid()
+    shadow_map_depth[worldid, lightid, texel_id] = 0.0
+
+    if not light_active[worldid % light_active.shape[0], lightid]:
+      return
+    if not light_castshadow[worldid % light_castshadow.shape[0], lightid]:
+      return
+    if light_type[worldid % light_type.shape[0], lightid] != 0:
+      return
+
+    lightpos = light_xpos_in[worldid, lightid]
+    lightdir = light_xdir_in[worldid, lightid]
+    ray_dir_world = spot_shadow_map_ray(lightdir, texel_id, wp.static(rc.shadow_map_size))
+
+    geom_id, dist, _normal, _u, _v, _f, _mesh_id = cast_ray(
+      geom_type,
+      geom_dataid,
+      geom_size,
+      flex_vertadr,
+      flex_edge,
+      flex_radius,
+      geom_xpos_in,
+      geom_xmat_in,
+      flexvert_xpos_in,
+      shadow_bvh_id,
+      shadow_group_root[worldid],
+      worldid,
+      shadow_bvh_ngeom,
+      shadow_bvh_nflexgeom,
+      shadow_enabled_geom_ids,
+      mesh_bvh_id,
+      hfield_bvh_id,
+      flex_geom_flexid,
+      flex_geom_edgeid,
+      flex_bvh_id,
+      flex_group_root,
+      lightpos,
+      ray_dir_world,
+      wp.static(rc.enable_backface_culling),
+    )
+
+    if geom_id != -1:
+      forward, _right, _up = light_frame(lightdir)
+      shadow_map_depth[worldid, lightid, texel_id] = wp.dot(ray_dir_world * dist, forward)
+
+  if rc.use_shadows and rc.use_shadow_maps and m.nlight > 0:
+    wp.launch(
+      kernel=_render_shadow_map_kernel,
+      dim=(d.nworld, m.nlight, rc.shadow_map_size * rc.shadow_map_size),
+      inputs=[
+        m.geom_type,
+        m.geom_dataid,
+        m.geom_size,
+        m.light_type,
+        m.light_castshadow,
+        m.light_active,
+        m.flex_vertadr,
+        m.flex_edge,
+        m.flex_radius,
+        d.geom_xpos,
+        d.geom_xmat,
+        d.light_xpos,
+        d.light_xdir,
+        d.flexvert_xpos,
+        rc.shadow_bvh_ngeom,
+        rc.bvh_nflexgeom,
+        rc.shadow_bvh_id,
+        rc.shadow_group_root,
+        rc.shadow_enabled_geom_ids,
+        rc.mesh_bvh_id,
+        rc.hfield_bvh_id,
+        rc.flex_bvh_id,
+        rc.flex_group_root,
+        rc.flex_geom_flexid,
+        rc.flex_geom_edgeid,
+      ],
+      outputs=[rc.shadow_map_depth],
+    )
 
   @wp.kernel(module="unique", enable_backward=False)
   def _render_megakernel(
@@ -646,6 +835,7 @@ def render(m: Model, d: Data, rc: RenderContext):
     # In:
     nrender: int,
     use_shadows: bool,
+    use_shadow_maps: bool,
     bvh_ngeom: int,
     bvh_nflexgeom: int,
     cam_res: wp.array[wp.vec2i],
@@ -674,6 +864,7 @@ def render(m: Model, d: Data, rc: RenderContext):
     flex_geom_flexid: wp.array[int],
     flex_geom_edgeid: wp.array[int],
     textures: wp.array[wp.Texture2D],
+    shadow_map_depth: wp.array3d[float],
     # Out:
     rgb_out: wp.array2d[wp.uint32],
     depth_out: wp.array2d[float],
@@ -843,6 +1034,9 @@ def render(m: Model, d: Data, rc: RenderContext):
         geom_xmat_in,
         flexvert_xpos_in,
         use_shadows,
+        use_shadow_maps,
+        wp.static(rc.shadow_map_size),
+        wp.static(rc.shadow_map_bias),
         shadow_bvh_id,
         shadow_group_root[worldid],
         wp.static(rc.shadow_bvh_ngeom),
@@ -855,6 +1049,8 @@ def render(m: Model, d: Data, rc: RenderContext):
         flex_geom_edgeid,
         flex_bvh_id,
         flex_group_root,
+        shadow_map_depth,
+        l,
         light_active[worldid % light_active.shape[0], l],
         light_type[worldid % light_type.shape[0], l],
         light_castshadow[worldid % light_castshadow.shape[0], l],
@@ -908,6 +1104,7 @@ def render(m: Model, d: Data, rc: RenderContext):
       d.flexvert_xpos,
       rc.nrender,
       rc.use_shadows,
+      rc.use_shadow_maps,
       rc.bvh_ngeom,
       rc.bvh_nflexgeom,
       rc.cam_res,
@@ -936,6 +1133,7 @@ def render(m: Model, d: Data, rc: RenderContext):
       rc.flex_geom_flexid,
       rc.flex_geom_edgeid,
       rc.textures,
+      rc.shadow_map_depth,
     ],
     outputs=[
       rc.rgb_data,
