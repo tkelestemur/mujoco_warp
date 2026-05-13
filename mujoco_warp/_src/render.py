@@ -181,7 +181,7 @@ def spot_shadow_map_ray(
 
 
 @wp.func
-def sample_spot_shadow_map(
+def sample_spot_shadow_map_visibility(
   shadow_map_depth: wp.array3d[float],
   worldid: int,
   lightid: int,
@@ -190,25 +190,50 @@ def sample_spot_shadow_map(
   lightpos: wp.vec3,
   lightdir: wp.vec3,
   hitpoint: wp.vec3,
-) -> bool:
+  normal: wp.vec3,
+) -> float:
   forward, right, up = light_frame(lightdir)
   light_to_point = hitpoint - lightpos
   z = wp.dot(light_to_point, forward)
   if z <= 0.0:
-    return False
+    return 1.0
 
   tan_outer = 0.6197443384
   x = math.safe_div(wp.dot(light_to_point, right), z * tan_outer)
   y = math.safe_div(wp.dot(light_to_point, up), z * tan_outer)
   if x < -1.0 or x > 1.0 or y < -1.0 or y > 1.0:
-    return False
+    return 1.0
 
   u = (x + 1.0) * 0.5
   v = (y + 1.0) * 0.5
-  px = int(wp.clamp(wp.floor(u * float(map_size)), 0.0, float(map_size - 1)))
-  py = int(wp.clamp(wp.floor(v * float(map_size)), 0.0, float(map_size - 1)))
-  shadow_z = shadow_map_depth[worldid, lightid, py * map_size + px]
-  return shadow_z > 0.0 and shadow_z < z - bias
+  px_center = int(wp.clamp(wp.floor(u * float(map_size)), 0.0, float(map_size - 1)))
+  py_center = int(wp.clamp(wp.floor(v * float(map_size)), 0.0, float(map_size - 1)))
+
+  L = wp.normalize(lightpos - hitpoint)
+  n_len = wp.length(normal)
+  n = normal
+  if n_len > 0.0:
+    n = normal / n_len
+  ndotl = wp.max(0.0, wp.dot(n, L))
+  slope_bias = bias * (1.0 + 6.0 * (1.0 - ndotl))
+  # A fixed world-space bias is too small for low-resolution maps; include a
+  # texel-footprint term so broad receivers do not self-shadow into visible grids.
+  texel_bias = 1.5 * (2.0 * z * tan_outer / float(map_size))
+  compare_bias = wp.max(slope_bias, texel_bias)
+
+  shadowed = float(0.0)
+  samples = float(0.0)
+  for oy in range(wp.static(5)):
+    for ox in range(wp.static(5)):
+      px = int(wp.clamp(float(px_center + ox - 2), 0.0, float(map_size - 1)))
+      py = int(wp.clamp(float(py_center + oy - 2), 0.0, float(map_size - 1)))
+      shadow_z = shadow_map_depth[worldid, lightid, py * map_size + px]
+      if shadow_z > 0.0 and shadow_z < z - compare_bias:
+        shadowed = shadowed + 1.0
+      samples = samples + 1.0
+
+  shadow_fraction = math.safe_div(shadowed, samples)
+  return 1.0 - 0.7 * shadow_fraction
 
 
 # TODO: Investigate combining cast_ray and cast_ray_first_hit
@@ -622,7 +647,7 @@ def compute_lighting(
   if use_shadows and lightcastshadow:
     shadow_hit = False
     if use_shadow_maps and lighttype == 0:
-      shadow_hit = sample_spot_shadow_map(
+      visible = sample_spot_shadow_map_visibility(
         shadow_map_depth,
         worldid,
         lightid,
@@ -631,6 +656,7 @@ def compute_lighting(
         lightpos,
         lightdir,
         hitpoint,
+        normal,
       )
     else:
       # Nudge the origin slightly along the surface normal to avoid
