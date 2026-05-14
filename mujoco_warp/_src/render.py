@@ -216,24 +216,32 @@ def sample_spot_shadow_map_visibility(
     n = normal / n_len
   ndotl = wp.max(0.0, wp.dot(n, L))
   slope_bias = bias * (1.0 + 6.0 * (1.0 - ndotl))
-  # A fixed world-space bias is too small for low-resolution maps; include a
-  # texel-footprint term so broad receivers do not self-shadow into visible grids.
-  texel_bias = 1.5 * (2.0 * z * tan_outer / float(map_size))
+  texel_bias = 0.5 * (2.0 * z * tan_outer / float(map_size))
   compare_bias = wp.max(slope_bias, texel_bias)
 
-  shadowed = float(0.0)
-  samples = float(0.0)
+  lit = float(0.0)
+  esm_scale = float(8.0)
   for oy in range(wp.static(5)):
+    wy = 0.375
+    if oy == 1 or oy == 3:
+      wy = 0.25
+    if oy == 0 or oy == 4:
+      wy = 0.0625
+    py = int(wp.clamp(float(py_center + oy - 2), 0.0, float(map_size - 1)))
     for ox in range(wp.static(5)):
+      wx = 0.375
+      if ox == 1 or ox == 3:
+        wx = 0.25
+      if ox == 0 or ox == 4:
+        wx = 0.0625
       px = int(wp.clamp(float(px_center + ox - 2), 0.0, float(map_size - 1)))
-      py = int(wp.clamp(float(py_center + oy - 2), 0.0, float(map_size - 1)))
       shadow_z = shadow_map_depth[worldid, lightid, py * map_size + px]
-      if shadow_z > 0.0 and shadow_z < z - compare_bias:
-        shadowed = shadowed + 1.0
-      samples = samples + 1.0
+      sample_lit = float(1.0)
+      if shadow_z > 0.0:
+        sample_lit = wp.min(1.0, wp.exp(esm_scale * (shadow_z - z + compare_bias)))
+      lit = lit + wx * wy * sample_lit
 
-  shadow_fraction = math.safe_div(shadowed, samples)
-  return 1.0 - 0.7 * shadow_fraction
+  return 0.3 + 0.7 * lit
 
 
 # TODO: Investigate combining cast_ray and cast_ray_first_hit
