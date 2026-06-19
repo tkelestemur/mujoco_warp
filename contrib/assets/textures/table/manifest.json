@@ -1,0 +1,120 @@
+{
+  "description": "Offline table texture dataset for MuJoCo Warp texture randomization demos.",
+  "format": {
+    "file_type": "png",
+    "color_mode": "RGB",
+    "width": 512,
+    "height": 512,
+    "conversion": "Source images were center-cropped and resampled to 512x512 RGB PNG files."
+  },
+  "textures": [
+    {
+      "name": "table_tex_robosuite_blue_wood",
+      "file": "robosuite_blue_wood.png",
+      "label": "robosuite blue wood",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/blue-wood.png",
+      "sha256": "d088acb4880acd08ec05fd6f222c8e1ee5ad97f60b2db2962a1993dcf5d3d6cc"
+    },
+    {
+      "name": "table_tex_robosuite_ceramic",
+      "file": "robosuite_ceramic.png",
+      "label": "robosuite ceramic",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/ceramic.png",
+      "sha256": "72a4b9112e3d40a72e2559b4508c0c43e8caedeaf03e8ee6b5503ef99d1d0a88"
+    },
+    {
+      "name": "table_tex_robosuite_dark_wood",
+      "file": "robosuite_dark_wood.png",
+      "label": "robosuite dark wood",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/dark-wood.png",
+      "sha256": "5dadafb5d802ccd0fdf8dc4f8457cd89eb66e7cb40995fa20f47d4e2fc483349"
+    },
+    {
+      "name": "table_tex_robosuite_gray_woodgrain",
+      "file": "robosuite_gray_woodgrain.png",
+      "label": "robosuite gray woodgrain",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/gray-woodgrain.png",
+      "sha256": "0500307e8b4087d184c81dab984d92573d85deb6371e3b263de34ca6c67c7b26"
+    },
+    {
+      "name": "table_tex_robosuite_green_wood",
+      "file": "robosuite_green_wood.png",
+      "label": "robosuite green wood",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/green-wood.png",
+      "sha256": "01cb9167cd5d65c3bdb7d15d2561750985ff7d1c50b84f30c308cdc838a1f53a"
+    },
+    {
+      "name": "table_tex_robosuite_light_wood",
+      "file": "robosuite_light_wood.png",
+      "label": "robosuite light wood",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/light-wood.png",
+      "sha256": "607db5240c2cebe6967ad21beccd229fc148da9579cc9018d56a562f5fd332fc"
+    },
+    {
+      "name": "table_tex_robosuite_red_wood",
+      "file": "robosuite_red_wood.png",
+      "label": "robosuite red wood",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/red-wood.png",
+      "sha256": "9801121d49dd745e6e5c4446833abf295f0e56fb89fffa3b5f04887b0091eda4"
+    },
+    {
+      "name": "table_tex_robosuite_steel_brushed",
+      "file": "robosuite_steel_brushed.png",
+      "label": "robosuite steel brushed",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/steel-brushed.png",
+      "sha256": "3aab7381eabbd16f81a74bbd9a6cfb9dafc4a0313f4b3030bbd8dd03499e1169"
+    },
+    {
+      "name": "table_tex_robosuite_wood_tiles",
+      "file": "robosuite_wood_tiles.png",
+      "label": "robosuite wood tiles",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/wood-tiles.png",
+      "sha256": "8ec9d7bdeee86cfa8b95bbcb0278c6e8fc5f8d8f5db3f30cebb15f44cdb22d9f"
+    },
+    {
+      "name": "table_tex_robosuite_wood_varnished_panels",
+      "file": "robosuite_wood_varnished_panels.png",
+      "label": "robosuite wood varnished panels",
+      "source": "robosuite",
+      "license": "MIT",
+      "source_url": "https://raw.githubusercontent.com/ARISE-Initiative/robosuite/master/robosuite/models/assets/textures/wood-varnished-panels.png",
+      "sha256": "8e9f27f536a6334c733a9ce5a815a500504807d85c63b636b5fdd4daaa129dbb"
+    },
+    {
+      "name": "table_tex_polyhaven_wood_table",
+      "file": "polyhaven_wood_table.png",
+      "label": "Poly Haven wood table",
+      "source": "Poly Haven",
+      "license": "CC0-1.0",
+      "source_url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_table/wood_table_diff_1k.jpg",
+      "sha256": "72cacf2f5bc5ad495fb1e457f57095a75d3ab958670990d7ee9cf15b432b09b7"
+    },
+    {
+      "name": "table_tex_polyhaven_wood_table_001",
+      "file": "polyhaven_wood_table_001.png",
+      "label": "Poly Haven wood table 001",
+      "source": "Poly Haven",
+      "license": "CC0-1.0",
+      "source_url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_table_001/wood_table_001_diff_1k.jpg",
+      "sha256": "1cc5f0d4e420bedf97bd2310ba9c158d46642b4cc683b15cdbf869004a27b94b"
+    }
+  ]
+}
