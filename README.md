@@ -138,6 +138,18 @@ Key capabilities:
 
 See the [announcement PR](https://github.com/google-deepmind/mujoco_warp/pull/1113) for more details.
 
+## Photorealistic OVRTX rendering
+
+An optional [NVIDIA OVRTX](https://github.com/NVIDIA-Omniverse/ovrtx) integration
+uses MuJoCo Warp as the physics backend while OVRTX provides tiled,
+photorealistic multi-environment rendering. It keeps geometry instanced, uploads
+moving scene state with one Warp kernel, keeps bulk geometry publication on
+CUDA, exposes zero-copy CUDA atlases, and supports asynchronous rendering that
+can overlap the next physics step.
+
+See the [OVRTX renderer guide](mujoco_warp/ovrtx/README.md) for installation,
+usage, performance details, and the included benchmark.
+
 # License
 
 MJWarp is released under the Apache 2.0 license. See [LICENSE](LICENSE) for details.

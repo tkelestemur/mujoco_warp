@@ -61,6 +61,12 @@ dev = [
     "mjviser>=0.0.10",
     "pillow",
 ]
+ovrtx = [
+    "ovrtx>=0.4,<0.5; python_version < '3.14' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "ovstage>=0.1,<0.2; python_version < '3.14' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "pillow",
+    "usd-core>=25.5",
+]
 # TODO(team): cpu and cuda JAX optional dependencies are temporary, remove after we land MJX:Warp
 cpu = [
     "jax"
@@ -123,7 +129,7 @@ testpaths = ["mujoco_warp"]
 norecursedirs = ["benchmarks", "contrib"]
 
 [tool.setuptools]
-package-data = { "mujoco_warp" = ["test_data/**"] }
+package-data = { "mujoco_warp" = ["test_data/**", "ovrtx/README.md"] }
 
 [tool.setuptools.packages.find]
 include = ["mujoco_warp*"]
